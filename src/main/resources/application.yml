@@ -1,0 +1,12 @@
+server:
+  port: 9010
+
+spring:
+  task:
+    scheduling:
+      thread-name-prefix: "name"
+      pool:
+        size: 2
+
+  profiles:
+    include: redis
