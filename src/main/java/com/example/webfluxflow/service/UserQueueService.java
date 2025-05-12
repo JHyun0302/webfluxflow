@@ -79,7 +79,7 @@ public class UserQueueService {
     }
 
     // 3초 단위로 proceed queue에 사용자 등록 (모든 waiting queue의 키값과 일치하는 100개의 queue에 있는 사용자들을 3명씩 스케쥴링)
-//    @Scheduled(initialDelay = 5000, fixedDelay = 3000)
+    @Scheduled(initialDelay = 10000, fixedDelay = 10000)
     public void scheduleAllowUser() {
         log.info("Scheduled allow user queue");
         Long maxAllowUserCount = 3L;
