@@ -10,12 +10,11 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuples;
 
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 
-import static java.nio.charset.StandardCharsets.*;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 @Service
 @RequiredArgsConstructor
@@ -42,6 +41,7 @@ public class UserQueueService {
         return reactiveRedisTemplate.opsForZSet().add(waitQueueKey, userId.toString(), unixTimestamp)
                 .filter(i -> i) // true or false 중 true 값일 때만 flatMap 동작, false이면 아무것도 넘겨주지 않으므로 exception 발생
                 .switchIfEmpty(Mono.error(ErrorCode.QUEUE_ALREADY_REGISTERED_USER.build()))
+//                .flatMap(i -> reactiveRedisTemplate.expire(waitQueueKey, Duration.ofMinutes(10))) // TTL 설정 (만약 10분 동안 사용자 이동이 없다면, 자동으로 대기열에서 삭제.)
                 .flatMap(i -> reactiveRedisTemplate.opsForZSet().rank(waitQueueKey, userId.toString()))
                 .map(i -> i >= 0 ? i + 1 : i);
     }
@@ -94,6 +94,17 @@ public class UserQueueService {
                 .flatMap(queue -> allowUser(queue, maxAllowUserCount).map(allowed -> Tuples.of(queue, allowed)))
                 .doOnNext(tuple -> log.info("Tried %d and allowed %d members of %s queue".formatted(maxAllowUserCount, tuple.getT2(), tuple.getT1())))
                 .subscribe();
+
+        //Flux.parallel()을 사용하여 대기열 Wait Queue를 병렬로 처리.
+//        reactiveRedisTemplate.
+//                scan(ScanOptions.scanOptions()
+//                        .match(USER_QUEUE_WAIT_KEY_FOR_SCAN)
+//                        .count(100)
+//                        .build())
+//                .parallel()
+//                .runOn(Schedulers.parallel())
+//                .flatMap(queue -> allowUser(queue, maxAllowUserCount))
+//                .subscribe();
     }
 
     // 웹페이지 변환되는 시점에 검증 Token
@@ -117,10 +128,20 @@ public class UserQueueService {
 
     // 토큰 검증 로직 추가 (사용자 Token & 요청 Token 비교)
     public Mono<Boolean> isAllowedByToken(final String queue, final Long userId, final String token){
-        return this.generateToken(queue, userId)
-                .filter(gen -> gen.equalsIgnoreCase(token))
-                .map(i -> true)
-                .defaultIfEmpty(false);
+        String proceedQueueKey = USER_QUEUE_WAIT_KEY_PREFIX + queue + USER_QUEUE_PROCEED_KEY_SUFFIX;
+
+        return reactiveRedisTemplate.opsForZSet().rank(proceedQueueKey, userId.toString())
+                .defaultIfEmpty(-1L)
+                .flatMap(rank -> {
+                    if (rank >= 0) {
+                        // 진행열에 사용자가 존재하는 경우 (인증 진행)
+                        return this.generateToken(queue, userId)
+                                .filter(gen -> gen.equalsIgnoreCase(token))
+                                .map(i -> true)
+                                .defaultIfEmpty(false);
+                    }
+                    return Mono.just(false);
+                });
     }
 
 }
