@@ -144,4 +144,22 @@ public class UserQueueService {
                 });
     }
 
+    // 사용자가 명시적으로 로그아웃하면, 진행열에서 제거
+    public Mono<Void> logoutUser(String queue, Long userId) {
+        String proceedQueueKey = USER_QUEUE_WAIT_KEY_PREFIX + queue + USER_QUEUE_PROCEED_KEY_SUFFIX;
+        return reactiveRedisTemplate.opsForZSet().remove(proceedQueueKey, userId.toString()).then();
+    }
+
+    // 진행열에 있는 사용자 수 확인 (1000명 초과시 대기 처리)
+    public Mono<Boolean> canEnterProceedQueue(String queue) {
+        String proceedQueueKey = USER_QUEUE_WAIT_KEY_PREFIX + queue + USER_QUEUE_PROCEED_KEY_SUFFIX;
+        return reactiveRedisTemplate.opsForZSet().size(proceedQueueKey)
+                .map(size -> size < 1000); // 1000명 이하일 경우 true
+    }
+
+    public Mono<Boolean> registerProceedQueue(final String queue, final Long userId) {
+        String proceedQueueKey = USER_QUEUE_WAIT_KEY_PREFIX + queue + USER_QUEUE_PROCEED_KEY_SUFFIX;
+        return reactiveRedisTemplate.opsForZSet().add(proceedQueueKey, userId.toString(), Instant.now().getEpochSecond());
+//        .flatMap(i -> reactiveRedisTemplate.expire(proceedQueueKey, Duration.ofMinutes(60))); // 1시간 TTL
+    }
 }

@@ -34,4 +34,27 @@ public class WaitingRoomController {
                                 .modelAttribute("queue", queue)
                                 .build()));
     }
+
+    // 사용자 접속 대기 시스템: 1000명 초과 시 대기 처리
+    @GetMapping("/map")
+    public Mono<Rendering> mapPage(@RequestParam(name = "queue", defaultValue = "default") String queue,
+                                   @RequestParam(name = "user_id") Long userId,
+                                   @RequestParam(name = "redirect_url") String redirectUrl) {
+        return userQueueService.canEnterProceedQueue(queue)
+                .flatMap(canEnter -> {
+                    if (canEnter) {
+                        // 1000명 이하 - 즉시 접속 (진행열로 이동)
+                        return userQueueService.registerProceedQueue(queue, userId)
+                                .then(Mono.just(Rendering.redirectTo(redirectUrl).build()));
+                    } else {
+                        // 1000명 초과 - 대기열로 이동
+                        return userQueueService.registerWaitQueue(queue, userId)
+                                .map(rank -> Rendering.view("waiting-room.html")
+                                        .modelAttribute("number", rank)
+                                        .modelAttribute("userId", userId)
+                                        .modelAttribute("queue", queue)
+                                        .build());
+                    }
+                });
+    }
 }
